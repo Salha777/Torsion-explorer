@@ -1,0 +1,810 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Torsion Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: lab-notebook sheet. Molecule switcher on top, map + 3D side by side, Hessian readout,
+   then DFT minima / barriers, surface stationary points, methods and the data loader last. */
+:root{
+  --bg:#EEF1F4; --panel:#FFFFFF; --ink:#141C24; --muted:#5A6672; --line:#D3DAE1;
+  --up:#D2741F; --down:#2463B0; --wire:#9AA7B4; --accent:#1D6F73; --accent-ink:#FFFFFF; --warn:#9A5B00;
+  --chi1:#B4430E; --chi2:#6D3FC0; --atomC:#5B6670; --atomH:#E8ECEF; --hbond:#0E8A55;
+  --sky1:#F7FAFC; --sky2:#DCE5EC;
+  --display:"Spectral",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F151B; --panel:#17202A; --ink:#E4EAF0; --muted:#93A1AE; --line:#2A3743;
+  --up:#F0973F; --down:#5D9BEA; --wire:#4E5E6D; --accent:#4FB3B6; --accent-ink:#0F151B; --warn:#E3A54A;
+  --chi1:#F2884B; --chi2:#A98BF0; --atomC:#A9B4BF; --atomH:#DDE3E8; --hbond:#5BD69A; --sky1:#1A2733; --sky2:#0B1117; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F151B; --panel:#17202A; --ink:#E4EAF0; --muted:#93A1AE; --line:#2A3743;
+  --up:#F0973F; --down:#5D9BEA; --wire:#4E5E6D; --accent:#4FB3B6; --accent-ink:#0F151B; --warn:#E3A54A;
+  --chi1:#F2884B; --chi2:#A98BF0; --atomC:#A9B4BF; --atomH:#DDE3E8; --hbond:#5BD69A; --sky1:#1A2733; --sky2:#0B1117; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+header{display:flex;flex-direction:column;gap:6px}
+header h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,5vw,40px);margin:0;letter-spacing:-.01em;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:68ch}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.status-pill{align-self:flex-start;font:500 12px var(--mono);letter-spacing:.04em;color:var(--warn);border:1px solid currentColor;border-radius:999px;padding:2px 10px}
+.mols{display:flex;flex-wrap:wrap;gap:8px}
+.mols button{display:flex;flex-direction:column;align-items:flex-start;gap:0;padding:7px 12px;min-width:0}
+.mols button .n{font-weight:600}
+.mols button .s{font-size:12px;color:var(--muted)}
+.mols button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.mols button[aria-pressed="true"] .s{color:var(--accent-ink);opacity:.85}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.panel h2{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0}
+canvas{width:100%;display:block;touch-action:none;border-radius:6px}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.legend{display:flex;align-items:center;gap:8px;font:12px var(--mono);color:var(--muted);flex-wrap:wrap}
+.legend .bar{height:10px;flex:1 1 120px;min-width:80px;border-radius:3px}
+.legend .sym{display:inline-flex;align-items:center;gap:5px}
+.legend.key{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:4px 14px;font-family:var(--body);font-size:12.5px}
+.legend.key b{font-weight:600;color:var(--ink)}
+.prov-chip{display:inline-block;font:500 12px var(--mono);border:1px solid currentColor;border-radius:999px;padding:1px 8px;margin-right:6px}
+.prov-full{color:var(--accent)}.prov-e{color:var(--ink)}.prov-sym{color:var(--muted)}.prov-int{color:var(--warn)}
+.togglerow{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.chi1{color:var(--chi1);font-weight:600}.chi2{color:var(--chi2);font-weight:600}
+.hb{color:var(--hbond);font-weight:600}
+#hbcap{font-family:var(--mono);font-size:13px;color:var(--hbond);min-height:1.4em}
+.hbrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.hbrow input[type=range]{flex:1 1 140px;accent-color:var(--hbond)}
+#molcap{font-family:var(--mono);font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums;min-height:2.6em}
+.readout{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+@media (max-width:520px){.readout{grid-template-columns:1fr}}
+.matrix{font-family:var(--mono);font-size:15px;display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums}
+.br{display:grid;grid-template-columns:auto auto;gap:4px 18px;padding:6px 12px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);border-radius:4px;text-align:right}
+.verdict{font-weight:600;font-size:16px}
+.stats{font-family:var(--mono);font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 16px;font-variant-numeric:tabular-nums}
+.up{color:var(--up)}.down{color:var(--down)}
+.controls{display:flex;flex-wrap:wrap;gap:8px}
+button{font:500 14px var(--body);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,tr.row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.two{display:grid;grid-template-columns:1.6fr 1fr;gap:18px}
+@media (max-width:860px){.two{grid-template-columns:1fr}}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12px;letter-spacing:.05em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:6px 8px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px;white-space:nowrap}
+td.num,th.num{text-align:right}
+tr.row{cursor:pointer}tr.row:hover td{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.tag{font-family:var(--body);font-weight:600}
+.popbar{display:inline-block;height:8px;border-radius:2px;background:var(--accent);vertical-align:middle;margin-right:6px}
+.big{font-family:var(--display);font-size:28px;font-weight:600;line-height:1.1}
+.barriers{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.barriers div{display:flex;flex-direction:column;gap:2px}
+.note{font-size:12.5px;color:var(--muted);margin:0}
+.methods{columns:2 300px;column-gap:28px;font-size:14px;color:var(--ink)}
+.methods p{margin:0 0 10px;break-inside:avoid}
+.methods b{font-weight:600}
+details summary{cursor:pointer;font-weight:600}
+textarea{width:100%;min-height:130px;font:13px var(--mono);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px}
+.formrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:14px}
+input[type=text],select{font:14px var(--body);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:9em}
+#status{font-size:13px;color:var(--muted);font-family:var(--mono)}
+.stage{position:relative;margin-block:22px;margin-left:calc(-1*max(16px,env(safe-area-inset-left,0px)));margin-right:calc(-1*max(16px,env(safe-area-inset-right,0px)));
+  background:radial-gradient(120% 90% at 55% 0%,var(--sky1),var(--sky2) 75%);border-block:1px solid var(--line)}
+.stage canvas{border-radius:0;cursor:crosshair}
+.stage.rotating canvas{cursor:grab}
+.stage-ui{position:absolute;top:16px;left:max(16px,env(safe-area-inset-left,0px));width:min(400px,calc(100% - 32px));pointer-events:none}
+.stage-card{pointer-events:auto;background:color-mix(in srgb,var(--panel) 84%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.stage-card h2{font-family:var(--display);font-size:22px;font-weight:600;margin:0;letter-spacing:-.01em;color:var(--ink);text-transform:none}
+.stage-note{max-width:1080px;margin:0 auto;padding:10px max(16px,env(safe-area-inset-left,0px)) 12px;display:flex;flex-direction:column;gap:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:6px 10px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.stage-zoom{position:absolute;top:16px;right:max(16px,env(safe-area-inset-right,0px));width:min(340px,30vw);pointer-events:auto;
+  background:color-mix(in srgb,var(--panel) 84%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.stage-zoom h3{margin:0;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+#zoom{width:100%;aspect-ratio:1/1;cursor:grab;border-radius:6px}
+@media (max-width:700px){.stage-ui{position:static;width:auto;padding:12px max(16px,env(safe-area-inset-left,0px)) 0}
+  .stage-zoom{position:static;width:auto;margin:10px max(16px,env(safe-area-inset-left,0px)) 0}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Relaxed torsional surfaces · B3LYP-D3(BJ)/6-311G(d,p), PCM water</div>
+  <h1>Torsion Explorer</h1>
+  <p>A relaxed DFT energy surface over the two side-chain dihedrals of N,N-dimethyltryptamine (DMT), with the optimised structure at every grid point. Load your own 2D scan or molecule file further down the page. Drag the probe across a surface to read the local Hessian, ∂²E/∂τᵢ∂τⱼ: its eigenvectors are the directions of strongest and weakest curvature, and their signs separate a conformer from a transition state.</p>
+  <span class="status-pill">DMT data: Salha, Kim and Chass, in preparation</span>
+</header>
+
+<nav class="mols" id="mols" aria-label="Molecule"></nav>
+</div>
+
+<section class="stage" id="stage" aria-label="Energy landscape with the structure at the probe floating above it">
+  <canvas id="surf" aria-label="3D relaxed energy landscape; the molecule floats above the probe position"></canvas>
+  <div class="stage-ui">
+    <div class="stage-card">
+      <h2 id="stagetitle">DMT</h2>
+      <div id="molcap"></div>
+      <div id="hbcap"></div>
+      <div class="hbrow"><label for="hbcut"><span class="hb">H-bonds</span> H···A ≤</label>
+        <input type="range" id="hbcut" min="1.6" max="3.2" step="0.05" value="2.50">
+        <output id="hbval" for="hbcut">2.50 Å</output><span>D–H···A ≥ 110°</span></div>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Dragging the landscape"><button type="button" id="dragprobe" aria-pressed="true">Move probe</button><button type="button" id="dragrot" aria-pressed="false">Rotate view</button></div>
+        <button id="spin" type="button">Spin landscape</button>
+        <button id="molspin" type="button">Spin molecule</button>
+        <button id="molreset" type="button">Reset</button>
+      </div>
+    </div>
+  </div>
+  <div class="stage-zoom">
+    <h3>Close-up</h3>
+    <canvas id="zoom" aria-label="Enlarged view of the structure at the probe"></canvas>
+    <p class="note" style="margin:0">Drag to rotate. Same structure and orientation as the floating molecule.</p>
+  </div>
+  <div class="stage-note">
+    <p class="hint" style="margin:0">Drag the landscape to move the probe (or switch to Rotate view); drag the molecule to turn it. Highlighted bonds are the rotation axes, <span class="chi1" id="ax1">χ1</span> and <span class="chi2" id="ax2">χ2</span>; dashed green lines are hydrogen bonds. The translucent patch is the local quadratic model E + g·δ + ½δᵀHδ.</p>
+    <p class="note" style="margin:0"><b>Not a reaction path.</b> Structures exist only at the grid points (every 10° for DMT); between them the molecule shown is the nearest computed one, and its smooth motion is a visual blend of two computed geometries, not a calculated pathway.</p>
+  </div>
+</section>
+
+<div class="wrap">
+
+<div class="grid">
+  <section class="panel">
+    <h2 id="maptitle">Energy map</h2>
+    <canvas id="map" aria-label="Contour map of relaxed energy against two dihedral angles"></canvas>
+    <div class="legend"><span>0</span><span class="bar" id="cbar"></span><span id="cmax">60 kJ/mol</span></div>
+    <div class="legend key">
+      <span class="sym"><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="var(--accent)" stroke="var(--panel)"/></svg><span><b>Full DFT minimum</b>: unconstrained opt + freq, ΔG</span></span>
+      <span class="sym"><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="var(--accent)" stroke-width="1.6"/></svg><span><b>Its mirror image</b>: same G by symmetry</span></span>
+      <span class="sym"><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="#0B1620" stroke="#FFFFFF" stroke-width="1"/></svg><span><b>Grid point</b>: constrained opt, SCF energy E only, no freq</span></span>
+      <span class="sym"><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="#0B1620" stroke-width="1.2"/></svg><span><b>Grid point by mirror symmetry</b>: E of the reflected point</span></span>
+      <span class="sym"><svg width="12" height="12" aria-hidden="true"><path d="M6 1 L11 6 L6 11 L1 6Z" fill="#FFFFFF" stroke="#0B1620"/></svg><span><b>Saddle of the interpolated surface</b>: not computed</span></span>
+      <span class="sym"><svg width="12" height="12" aria-hidden="true"><rect x="1" y="3" width="10" height="6" fill="var(--line)"/></svg><span><b>Colour between points</b>: spline interpolation</span></span>
+    </div>
+    <label class="togglerow"><input type="checkbox" id="showgrid" checked> Show grid points</label>
+    <p class="hint">Shaded as a relief map, with contours every 5 kJ/mol (darker every 20). Drag to move the probe. Arrows are eigenvectors of H: <span class="up">orange curves up (λ&gt;0)</span>, <span class="down">blue curves down (λ&lt;0)</span>.</p>
+  </section>
+  <section class="panel">
+  <h2>Hessian at the probe</h2>
+  <p class="note" style="margin:0">Curvature of the interpolated relaxed surface (electronic energy), not a DFT frequency calculation.</p>
+  <div class="readout">
+    <div class="matrix"><span>H =</span><div class="br" id="hm"></div></div>
+    <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+      <div id="prov"></div>
+      <div class="verdict" id="verdict"></div>
+      <div class="stats" id="stats"></div>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="primary" id="tour" type="button">Tour stationary points</button>
+  </div>
+</section>
+</div>
+
+
+<div class="two">
+  <section class="panel">
+    <h2>DFT minima</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Conformer</th><th class="num" id="dh1">χ1 / °</th><th class="num" id="dh2">χ2 / °</th><th class="num" id="dh3">Rotor / °</th><th class="num">ΔG / kJ mol⁻¹</th><th>Population, 298 K</th></tr></thead>
+      <tbody id="mins"></tbody>
+    </table></div>
+    <p class="note">Fully optimised minima with quasi-RRHO free energies (Grimme 2012). Populations count each chiral conformer of an achiral molecule twice (its mirror image, open circles on the map). Click a row to move the probe there.</p>
+  </section>
+  <section class="panel">
+    <h2>Rotation barriers</h2>
+    <div class="barriers" id="barriers"></div>
+    <p class="note">Lowest-energy path once around each dihedral on the relaxed 2D surface, other dihedral free (ΔE). The 1D scan peak is shown for comparison; a starred value is an upper bound, because a second dihedral stayed in its starting basin during the scan.</p>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Stationary points of the interpolated surface</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Point</th><th>Type</th><th class="num" id="h1">χ1 / °</th><th class="num" id="h2">χ2 / °</th><th class="num">ΔE / kJ mol⁻¹</th><th class="num">λ₁, λ₂ / kJ mol⁻¹ rad⁻²</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+  <p class="note" id="statnote">Found by Newton search on the spline through the grid. These are points of the relaxed surface (electronic energy relative to the lowest grid point, all other coordinates optimised at each grid point), so their positions are limited by the grid spacing. Minima are kept only where the grid itself has a local minimum, which removes spline overshoot between grid points. The DFT minima above are the authoritative structures.</p>
+</section>
+
+<section class="panel">
+  <h2>How these surfaces were made</h2>
+  <div class="methods">
+    <p><b>Level of theory.</b> B3LYP-D3(BJ)/6-311G(d,p) with PCM water, Gaussian 16 Rev. A.03. Neutral DMT.</p>
+    <p><b>Surface.</b> χ1 and χ2 frozen on a 10° grid, with every other coordinate optimised independently at each point. DMT is achiral, so half the grid was computed and the rest completed by mirror symmetry, (τ1, τ2) → (−τ1, −τ2).</p>
+    <p><b>Structures.</b> Each grid point's structure is its final constrained optimisation; mirror-symmetry cells show the reflected structure of the computed point. The viewer snaps to the nearest grid point and blends visually between consecutive structures; neither the snapped structure nor the blend is a calculated geometry for the probe position itself.</p>
+    <p><b>Interpolation.</b>A periodic bicubic spline passes through every grid energy and has continuous second derivatives, so the Hessian shown is defined everywhere. Between grid points it is an interpolation, not a calculation. Grid points that changed bonding on optimisation (steric clashes) are excluded and drawn as hatched cells.</p>
+    <p><b>Minima and free energies.</b> Each unique minimum was fully re-optimised with frequencies (no imaginary modes). Free energies use the quasi-RRHO entropy of Grimme (100 cm⁻¹ cutoff) at 298.15 K; populations are Boltzmann weights over the minima.</p>
+    <p><b>Caveats.</b> Electronic energies on the surfaces, free energies for the minima: the two are not directly comparable. The protonated amine, which binds the 5-HT₂ₐ receptor, has different preferred conformers; those surfaces are not shown here.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <details id="loader">
+    <summary>Load your own data</summary>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+      <p class="hint" style="margin:0">Paste a relaxed scan as three columns: τ1 (°), τ2 (°), energy. Commas, tabs or spaces all work; header lines are skipped. A complete regular grid is interpolated with the same periodic spline; anything else is fitted with a periodic Fourier series.</p>
+      <textarea id="csv" spellcheck="false" placeholder="tau1,tau2,energy&#10;-180,-180,-842.103551&#10;-180,-150,-842.102874&#10;..."></textarea>
+      <div class="formrow">
+        <label for="unit">Energy unit</label>
+        <select id="unit"><option value="2625.4996">Hartree</option><option value="4.184">kcal/mol</option><option value="1" selected>kJ/mol</option><option value="96.4853">eV</option></select>
+        <label for="n1">τ1 name</label><input type="text" id="n1" value="τ1">
+        <label for="n2">τ2 name</label><input type="text" id="n2" value="τ2">
+      </div>
+      <div class="formrow">
+        <input type="file" id="file" accept=".csv,.txt,.dat" aria-label="Scan file">
+        <button class="primary" id="fit" type="button">Load surface</button>
+      </div>
+      <div id="status">Your data stays in this browser tab.</div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:6px 0">
+      <p class="hint" style="margin:0"><b>Or load a molecule file (.json)</b> for the full view: DFT minima, barriers and, if you include them, the 3D structure at every grid point. The format is described in the project README; <code>examples/example-molecule.json</code> is a starting point.</p>
+      <div class="formrow">
+        <input type="file" id="molfile" accept=".json,application/json" aria-label="Molecule file">
+      </div>
+      <div id="molstatus" class="note"></div>
+    </div>
+  </details>
+</section>
+</div>
+
+<script id="psych-data" type="application/json">__DATA__</script>
+<script id="psych-geom" type="application/json">__GEOM__</script>
+<script>
+(function(){
+const PI=Math.PI, RT=0.0083144626*298.15, ECAP=60;
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const DATA=JSON.parse(document.getElementById("psych-data").textContent);
+const wrap=a=>((a+PI)%(2*PI)+2*PI)%(2*PI)-PI;
+const deg=r=>r*180/PI, rad=d=>d*PI/180;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=(v,d=1)=>(v<0?"−":"")+Math.abs(v).toFixed(d);
+
+const S={model:null,mol:null,stat:[],probe:{x:0,y:0},yaw:-0.75,pitch:0.45,emax:1,names:["χ1","χ2"],fieldCanvas:null,spin:false,touring:false,holes:[]};
+
+// ---------- periodic bicubic B-spline through a regular grid ----------
+function splineModel(nx,ny,F){
+  // F[i*ny+j] = energy at (−π + i·hx, −π + j·hy); solve (c[k−1]+4c[k]+c[k+1])/6 = f[k] cyclically, rows then columns
+  const C=Float64Array.from(F),solve1=(get,set,n)=>{const f=[],c=[];for(let k=0;k<n;k++){f[k]=get(k);c[k]=f[k];}
+    for(let it=0;it<80;it++)for(let k=0;k<n;k++)c[k]=(6*f[k]-c[(k-1+n)%n]-c[(k+1)%n])/4;for(let k=0;k<n;k++)set(k,c[k]);};
+  for(let i=0;i<nx;i++)solve1(k=>C[i*ny+k],(k,v)=>C[i*ny+k]=v,ny);
+  for(let j=0;j<ny;j++)solve1(k=>C[k*ny+j],(k,v)=>C[k*ny+j]=v,nx);
+  const hx=2*PI/nx,hy=2*PI/ny;
+  const B=t=>{const u=1-t;return[[u*u*u/6,(3*t*t*t-6*t*t+4)/6,(-3*t*t*t+3*t*t+3*t+1)/6,t*t*t/6],
+    [-u*u/2,(3*t*t-4*t)/2,(-3*t*t+2*t+1)/2,t*t/2],[u,3*t-2,-3*t+1,t]];};
+  return function(x,y){
+    const ux=(wrap(x)+PI)/hx,uy=(wrap(y)+PI)/hy,i=Math.floor(ux),j=Math.floor(uy),bx=B(ux-i),by=B(uy-j);
+    let e=0,gx=0,gy=0,hxx=0,hxy=0,hyy=0;
+    for(let a=0;a<4;a++){const ii=((i-1+a)%nx+nx)%nx;for(let b=0;b<4;b++){const c=C[ii*ny+((j-1+b)%ny+ny)%ny];
+      e+=bx[0][a]*by[0][b]*c;gx+=bx[1][a]*by[0][b]*c;gy+=bx[0][a]*by[1][b]*c;
+      hxx+=bx[2][a]*by[0][b]*c;hxy+=bx[1][a]*by[1][b]*c;hyy+=bx[0][a]*by[2][b]*c;}}
+    return{e,gx:gx/hx,gy:gy/hy,hxx:hxx/(hx*hx),hxy:hxy/(hx*hy),hyy:hyy/(hy*hy)};
+  };
+}
+function gridModel(pts){
+  // pts: [deg1,deg2,E]; returns {fn, holes} or null if not a complete-ish regular grid
+  const xs=[...new Set(pts.map(p=>((p[0]+180)%360+360)%360-180))].sort((a,b)=>a-b),ys=[...new Set(pts.map(p=>((p[1]+180)%360+360)%360-180))].sort((a,b)=>a-b);
+  const nx=xs.length,ny=ys.length;if(nx<6||ny<6)return null;
+  const hx=360/nx,hy=360/ny;
+  if(xs.some((v,k)=>Math.abs(v-(-180+k*hx))>1e-6)||ys.some((v,k)=>Math.abs(v-(-180+k*hy))>1e-6))return null;
+  const F=new Float64Array(nx*ny).fill(NaN);
+  for(const p of pts){const i=Math.round((((p[0]+180)%360+360)%360)/hx)%nx,j=Math.round((((p[1]+180)%360+360)%360)/hy)%ny;F[i*ny+j]=p[2];}
+  const missing=[];let mx=-Infinity;F.forEach((v,k)=>{if(isNaN(v))missing.push(k);else mx=Math.max(mx,v);});
+  if(missing.length>0.1*nx*ny)return null;
+  for(const k of missing)F[k]=mx;
+  const loc=[];for(let i=0;i<nx;i++)for(let j=0;j<ny;j++){const k=i*ny+j;if(missing.includes(k))continue;let ok=true;
+    for(let a=-1;a<=1&&ok;a++)for(let b=-1;b<=1;b++){if(!a&&!b)continue;const kk=((i+a+nx)%nx)*ny+((j+b+ny)%ny);if(!missing.includes(kk)&&F[kk]<=F[k]){ok=false;break;}}
+    if(ok)loc.push({x:rad(-180+i*hx),y:rad(-180+j*hy)});}
+  return{fn:splineModel(nx,ny,F),loc,h:rad(Math.max(hx,hy)),holes:missing.map(k=>({x:rad(-180+Math.floor(k/ny)*hx),y:rad(-180+(k%ny)*hy),hx:rad(hx),hy:rad(hy)}))};
+}
+// ---------- Fourier fallback for irregular user data ----------
+function basis(Mx){const L=[];for(let m=0;m<=Mx;m++)for(let n=-Mx;n<=Mx;n++){if(m===0&&n<0)continue;L.push({m,n,t:0});if(!(m===0&&n===0))L.push({m,n,t:1});}return L;}
+function solve(A,b){const n=b.length;
+  for(let k=0;k<n;k++){let p=k;for(let i=k+1;i<n;i++)if(Math.abs(A[i][k])>Math.abs(A[p][k]))p=i;
+    [A[k],A[p]]=[A[p],A[k]];[b[k],b[p]]=[b[p],b[k]];const piv=A[k][k];if(Math.abs(piv)<1e-14)continue;
+    for(let i=k+1;i<n;i++){const f=A[i][k]/piv;if(!f)continue;for(let j=k;j<n;j++)A[i][j]-=f*A[k][j];b[i]-=f*b[k];}}
+  const x=new Array(n).fill(0);for(let k=n-1;k>=0;k--){let s=b[k];for(let j=k+1;j<n;j++)s-=A[k][j]*x[j];x[k]=Math.abs(A[k][k])<1e-14?0:s/A[k][k];}return x;}
+function fourierModel(pts){
+  let Mx=4;while(Mx>1&&basis(Mx).length>pts.length*0.6)Mx--;
+  const B=basis(Mx),P=B.length,A=Array.from({length:P},()=>new Float64Array(P)),b=new Array(P).fill(0);
+  const row=(x,y)=>B.map(T=>T.t?Math.sin(T.m*x+T.n*y):Math.cos(T.m*x+T.n*y));
+  for(const p of pts){const r=row(p.x,p.y);for(let i=0;i<P;i++){b[i]+=r[i]*p.e;for(let j=0;j<P;j++)A[i][j]+=r[i]*r[j];}}
+  for(let i=0;i<P;i++)A[i][i]+=1e-6;const c=solve(A,b);
+  let ss=0;for(const p of pts){const r=row(p.x,p.y);let v=0;for(let i=0;i<P;i++)v+=r[i]*c[i];ss+=(v-p.e)**2;}
+  const fn=(x,y)=>{let e=0,gx=0,gy=0,hxx=0,hxy=0,hyy=0;B.forEach((T,k)=>{const u=T.m*x+T.n*y,co=Math.cos(u),si=Math.sin(u),a=c[k];
+    if(!T.t){e+=a*co;gx-=a*T.m*si;gy-=a*T.n*si;hxx-=a*T.m*T.m*co;hxy-=a*T.m*T.n*co;hyy-=a*T.n*T.n*co;}
+    else{e+=a*si;gx+=a*T.m*co;gy+=a*T.n*co;hxx-=a*T.m*T.m*si;hxy-=a*T.m*T.n*si;hyy-=a*T.n*T.n*si;}});return{e,gx,gy,hxx,hxy,hyy};};
+  return{fn,Mx,P,rms:Math.sqrt(ss/pts.length)};
+}
+
+const derivs=(x,y)=>{const d=S.model(x,y);d.e-=S.shift;return d;};
+const E=(x,y)=>derivs(x,y).e;
+function eig(a,b,c){const m=(a+c)/2,r=Math.hypot((a-c)/2,b),hi=m+r,lo=m-r;let v;
+  if(Math.abs(b)>1e-10){v=[hi-c,b];}else{v=a>=c?[1,0]:[0,1];}const n=Math.hypot(v[0],v[1]);v=[v[0]/n,v[1]/n];
+  return{l1:lo,l2:hi,v1:[-v[1],v[0]],v2:v};}
+const kind=(l1,l2)=>l1>0?"min":l2<0?"max":"saddle";
+function findStationary(){
+  const out=[],K=24;
+  for(let i=0;i<K;i++)for(let j=0;j<K;j++){
+    let x=-PI+(i+.5)*2*PI/K,y=-PI+(j+.5)*2*PI/K,ok=false;
+    for(let it=0;it<80;it++){const d=derivs(x,y),g=Math.hypot(d.gx,d.gy);if(g<1e-6){ok=true;break;}
+      const det=d.hxx*d.hyy-d.hxy*d.hxy;if(Math.abs(det)<1e-10)break;
+      let dx=-(d.hyy*d.gx-d.hxy*d.gy)/det,dy=-(-d.hxy*d.gx+d.hxx*d.gy)/det;const st=Math.hypot(dx,dy);if(st>0.15){dx*=0.15/st;dy*=0.15/st;}
+      x=wrap(x+dx);y=wrap(y+dy);}
+    if(!ok||out.some(p=>Math.hypot(wrap(p.x-x),wrap(p.y-y))<0.04))continue;
+    const d=derivs(x,y),ev=eig(d.hxx,d.hxy,d.hyy);
+    if(S.holes.some(h=>Math.abs(wrap(x-h.x))<h.hx*0.75&&Math.abs(wrap(y-h.y))<h.hy*0.75))continue;
+    out.push({x,y,e:d.e,l1:ev.l1,l2:ev.l2,type:kind(ev.l1,ev.l2)});}
+  if(S.loc){ // spline ringing between grid points makes minimum/saddle pairs the grid does not support
+    const near=(p,q,r)=>Math.hypot(wrap(p.x-q.x),wrap(p.y-q.y))<r;
+    const bad=out.filter(p=>p.type==="min"&&!S.loc.some(q=>near(p,q,S.gridH*1.05)));
+    for(let k=out.length-1;k>=0;k--){const p=out[k];
+      if(bad.includes(p)||(p.type!=="min"&&bad.some(q=>near(p,q,S.gridH*1.5))))out.splice(k,1);}}
+  const order={min:0,saddle:1,max:2};out.sort((a,b)=>order[a.type]-order[b.type]||a.e-b.e);
+  const cnt={min:0,saddle:0,max:0},pre={min:"m",saddle:"TS",max:"M"};out.forEach(p=>{cnt[p.type]++;p.label=pre[p.type]+cnt[p.type];});
+  return out;
+}
+
+// ---------- colour ----------
+const STOPS=[[7,26,52],[18,74,112],[24,128,140],[86,180,146],[200,222,148],[244,206,140],[236,176,140]];
+function cmap(t){t=Math.max(0,Math.min(1,t))*(STOPS.length-1);const i=Math.min(STOPS.length-2,Math.floor(t)),f=t-i,a=STOPS[i],b=STOPS[i+1];
+  return[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f];}
+(function(){const cv=document.getElementById("cbar");const st=STOPS.map((c,i)=>`rgb(${c})`+` ${i/(STOPS.length-1)*100}%`).join(",");cv.style.background=`linear-gradient(90deg,${st})`;})();
+function buildField(){
+  // continuous colour + hill-shading from the surface gradient (light from the upper left) + contours every 5 kJ/mol
+  const N=300,F=new Float32Array(N*N),GX=new Float32Array(N*N),GY=new Float32Array(N*N);let mx=-1e9;
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const x=-PI+(i+.5)*2*PI/N,y=PI-(j+.5)*2*PI/N,d=derivs(x,y),k=j*N+i;
+    F[k]=d.e;GX[k]=d.gx;GY[k]=d.gy;if(d.e>mx)mx=d.e;}
+  S.emax=Math.min(Math.max(mx,1e-6),ECAP);
+  const relief=1.6*PI/S.emax,Lx=-0.55,Ly=0.55,Lz=0.63,step=5,major=20;
+  const cv=document.createElement("canvas");cv.width=N;cv.height=N;const cx=cv.getContext("2d"),img=cx.createImageData(N,N);
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i,e=F[k],capped=e>=S.emax;
+    let col=cmap(Math.min(e,S.emax)/S.emax);
+    const nx=capped?0:-GX[k]*relief,ny=capped?0:-GY[k]*relief,nn=Math.hypot(nx,ny,1);
+    const shade=0.62+0.5*((nx*Lx+ny*Ly+Lz)/nn-Lz);col=col.map(v=>Math.max(0,Math.min(255,v*shade)));
+    if(!capped){const b=Math.floor(e/step),r=i<N-1?Math.floor(F[k+1]/step):b,dn=j<N-1?Math.floor(F[k+N]/step):b;
+      if(r!==b||dn!==b){const big=Math.floor(e/major)!==Math.floor((r!==b?F[k+1]:F[k+N])/major);col=col.map(v=>v*(big?0.52:0.78));}}
+    const p=k*4;img.data[p]=col[0];img.data[p+1]=col[1];img.data[p+2]=col[2];img.data[p+3]=255;}
+  cx.putImageData(img,0,0);S.fieldCanvas=cv;
+  document.getElementById("cmax").textContent=(mx>ECAP?"≥":"")+S.emax.toFixed(0)+" kJ/mol";
+}
+
+// ---------- molecules ----------
+function loadMolecule(key){
+  stopTour();
+  const m=DATA.find(d=>d.key===key)||DATA[0];S.mol=m;S.names=m.names;
+  const g=gridModel(m.grid);S.model=g.fn;S.modelId=m.key;S.holes=g.holes;S.loc=g.loc;S.gridH=g.h;S.shift=0;
+  document.getElementById("stagetitle").textContent=m.name;
+  // reference: the lowest grid energy is 0 in the data; keep it
+  S.stat=findStationary();buildField();
+  const gmin=m.minima[0];S.probe=gmin?{x:rad(gmin.x),y:rad(gmin.y)}:{x:0,y:0};
+  document.querySelectorAll("#mols button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.key===m.key?"true":"false"));
+  document.getElementById("maptitle").textContent=`Energy map · ${m.name} · ${m.spacing}° grid`;
+  setNames();buildMins();buildBarriers();buildTable();
+  document.getElementById("statnote").hidden=false;
+  try{history.replaceState(null,"","#"+m.key);}catch(e){}
+  draw();
+}
+function setNames(){
+  const [a,b]=S.names;
+  for(const[id,n]of[["h1",a],["h2",b],["dh1",a],["dh2",b]])document.getElementById(id).textContent=n+" / °";
+  document.getElementById("dh3").textContent=S.mol&&S.mol.minima.some(m=>m.rotor!==undefined)?"Rotor / °":"—";
+}
+function buildMins(){
+  const tb=document.getElementById("mins");if(!S.mol){tb.innerHTML="";return;}
+  const maxp=Math.max(...S.mol.minima.map(m=>m.pop),1);
+  tb.innerHTML=S.mol.minima.map((m,i)=>`<tr class="row" data-i="${i}" tabindex="0"><td class="tag">${m.label}</td><td class="num">${fmt(m.x)}</td><td class="num">${fmt(m.y)}</td><td class="num">${m.rotor!==undefined?fmt(m.rotor):"—"}</td><td class="num">${m.dG.toFixed(2)}</td><td><span class="popbar" style="width:${Math.max(2,60*m.pop/maxp)}px"></span>${m.pop<0.05?"&lt;0.1":m.pop.toFixed(1)} %</td></tr>`).join("");
+}
+function buildBarriers(){
+  const el=document.getElementById("barriers");if(!S.mol){el.innerHTML='<p class="note">Not available for loaded data.</p>';return;}
+  el.innerHTML=S.mol.barriers.map(b=>`<div><span class="eyebrow">${b.dih}</span><span class="big">${b.grid.toFixed(1)}</span><span class="note">kJ/mol · 1D scan ${b.scan.toFixed(1)}${b.upper?"*":""}</span></div>`).join("");
+}
+function buildTable(){
+  const name={min:"Minimum",saddle:"Saddle",max:"Maximum"};
+  document.getElementById("tbody").innerHTML=S.stat.map((p,i)=>`<tr class="row" data-i="${i}" tabindex="0"><td class="tag">${p.label}</td><td style="font-family:var(--body)">${name[p.type]}</td><td class="num">${fmt(deg(p.x))}</td><td class="num">${fmt(deg(p.y))}</td><td class="num">${p.e.toFixed(1)}</td><td class="num">${p.l1.toFixed(1)}, ${p.l2.toFixed(1)}</td></tr>`).join("");
+}
+const nav=document.getElementById("mols");
+nav.innerHTML=DATA.map(d=>`<button type="button" data-key="${d.key}" aria-pressed="false"><span class="n">${d.name}</span><span class="s">${d.sub}</span></button>`).join("");
+nav.addEventListener("click",e=>{const b=e.target.closest("button");if(b)loadMolecule(b.dataset.key);});
+
+// ---------- map ----------
+const map=document.getElementById("map"),surf=document.getElementById("surf");
+const M={l:44,r:12,t:12,b:38};
+function mapGeom(){const w=map.clientWidth,size=w-M.l-M.r;return{w,h:size+M.t+M.b,size};}
+function fitCanvas(cv,w,h){const dpr=window.devicePixelRatio||1;cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);const c=cv.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);return c;}
+const toPx=(x,y,g)=>[M.l+(x+PI)/(2*PI)*g.size,M.t+(PI-y)/(2*PI)*g.size];
+function arrow(c,x0,y0,dx,dy,col){
+  c.strokeStyle=col;c.fillStyle=col;c.lineWidth=3;c.lineCap="round";
+  c.beginPath();c.moveTo(x0-dx,y0-dy);c.lineTo(x0+dx,y0+dy);c.stroke();
+  for(const s of[1,-1]){const tx=x0+s*dx,ty=y0+s*dy,a=Math.atan2(s*dy,s*dx);
+    c.beginPath();c.moveTo(tx+Math.cos(a)*4,ty+Math.sin(a)*4);c.lineTo(tx+Math.cos(a+2.5)*9,ty+Math.sin(a+2.5)*9);c.lineTo(tx+Math.cos(a-2.5)*9,ty+Math.sin(a-2.5)*9);c.closePath();c.fill();}
+}
+function drawMap(){
+  const g=mapGeom();if(g.size<50)return;const c=fitCanvas(map,g.w,g.h);
+  c.clearRect(0,0,g.w,g.h);c.imageSmoothingEnabled=true;c.drawImage(S.fieldCanvas,M.l,M.t,g.size,g.size);
+  // excluded clash cells
+  c.save();c.beginPath();c.rect(M.l,M.t,g.size,g.size);c.clip();
+  for(const h of S.holes){const[px,py]=toPx(h.x,h.y,g),wx=h.hx/(2*PI)*g.size,wy=h.hy/(2*PI)*g.size;
+    for(const[ox,oy]of[[0,0],[g.size,0],[-g.size,0],[0,g.size],[0,-g.size]]){
+      const x0=px-wx/2+ox,y0=py-wy/2+oy;c.fillStyle="rgba(11,22,32,.55)";c.fillRect(x0,y0,wx,wy);
+      c.strokeStyle="rgba(255,255,255,.55)";c.lineWidth=1;c.beginPath();for(let k=-wy;k<wx;k+=5){c.moveTo(x0+k,y0+wy);c.lineTo(x0+k+wy,y0);}c.stroke();}}
+  c.restore();
+  c.strokeStyle=css("--line");c.lineWidth=1;c.strokeRect(M.l+.5,M.t+.5,g.size-1,g.size-1);
+  c.fillStyle=css("--muted");c.font="12px 'IBM Plex Mono',monospace";
+  for(const v of[-180,-90,0,90,180]){const r=rad(v),[px]=toPx(r,0,g),[,py]=toPx(0,r,g);
+    c.textAlign="center";c.fillText(v,px,M.t+g.size+16);c.textAlign="right";c.fillText(v,M.l-6,py+4);}
+  c.textAlign="center";c.font="13px 'IBM Plex Sans',sans-serif";c.fillStyle=css("--ink");
+  c.fillText(S.names[0]+" / °",M.l+g.size/2,g.h-4);
+  c.save();c.translate(12,M.t+g.size/2);c.rotate(-PI/2);c.fillText(S.names[1]+" / °",0,0);c.restore();
+  // saddles from the surface
+  for(const p of S.stat){if(p.type!=="saddle")continue;const[px,py]=toPx(p.x,p.y,g);
+    c.lineWidth=1.5;c.strokeStyle="#0B1620";c.fillStyle="#FFFFFF";c.beginPath();c.moveTo(px,py-5);c.lineTo(px+5,py);c.lineTo(px,py+5);c.lineTo(px-5,py);c.closePath();c.fill();c.stroke();}
+  // computed grid points: filled = constrained optimisation, hollow = by mirror symmetry
+  if(S.mol&&document.getElementById("showgrid").checked){const sym=new Set((GEOM[S.mol.key]||{}).sym||[]),r=S.mol.spacing<20?1.3:2.4;
+    for(const p of S.mol.grid){const[px,py]=toPx(rad(p[0]),rad(p[1]),g);const s=sym.has(`${p[0]},${p[1]}`);
+      c.beginPath();c.arc(px,py,r,0,2*PI);c.lineWidth=1;
+      if(s){c.strokeStyle="rgba(11,22,32,.75)";c.stroke();}else{c.fillStyle="rgba(11,22,32,.8)";c.strokeStyle="rgba(255,255,255,.7)";c.fill();c.stroke();}}}
+  // DFT minima and mirror images
+  if(S.mol){const acc=css("--accent");
+    S.mol.minima.forEach((m,i)=>{const pts=[[rad(m.x),rad(m.y),true]];if(S.mol.achiral)pts.push([rad(-m.x),rad(-m.y),false]);
+      for(const[x,y,filled]of pts){const[px,py]=toPx(wrap(x),wrap(y),g);c.lineWidth=filled?1.5:2;
+        c.beginPath();c.arc(px,py,i===0?6:4.5,0,2*PI);
+        if(filled){c.fillStyle=acc;c.strokeStyle="#FFFFFF";c.fill();c.stroke();}else{c.strokeStyle=acc;c.stroke();}}});}
+  // probe + eigenvectors
+  const d=derivs(S.probe.x,S.probe.y),ev=eig(d.hxx,d.hxy,d.hyy),[px,py]=toPx(S.probe.x,S.probe.y,g),L=Math.max(22,g.size*0.07);
+  const col=l=>l>0?css("--up"):css("--down");
+  arrow(c,px,py,ev.v1[0]*L,-ev.v1[1]*L,col(ev.l1));arrow(c,px,py,ev.v2[0]*L,-ev.v2[1]*L,col(ev.l2));
+  c.fillStyle="#0B1620";c.strokeStyle="#FFFFFF";c.lineWidth=2;c.beginPath();c.arc(px,py,5.5,0,2*PI);c.fill();c.stroke();
+}
+
+// ---------- 3D ----------
+function proj(x,y,e){
+  const X=x/PI,Y=y/PI,Z=Math.min(e,S.emax)/S.emax*0.8-0.4,cy=Math.cos(S.yaw),sy=Math.sin(S.yaw);
+  const xr=X*cy-Y*sy,yr=X*sy+Y*cy,cp=Math.cos(S.pitch),sp=Math.sin(S.pitch),v=S.view;
+  return[v.cx+xr*v.sx,v.cy-(Z*cp*v.sz+yr*sp*v.sy),yr*cp-Z*sp];
+}
+// ---------- stage: cached landscape + floating molecule ----------
+const stage=document.getElementById("stage"),surfCache=document.createElement("canvas");
+let surfKey="",stageSize="";S.view={cx:0,cy:0,sx:1,sy:1,sz:1};S.verts=null;S.dragMode="probe";
+function stageGeom(){const w=surf.clientWidth;const h=w<700?Math.round(w*1.1):Math.round(Math.min(820,Math.max(460,innerHeight*0.76)));return{w,h};}
+function setView(w,h){
+  // a wide, low landscape across the stage, leaving the upper third for the floating molecule
+  S.view={cx:w/2,cy:h*0.67,sx:Math.min(w*0.34,h*1.7),sy:h*0.28,sz:h*0.38};}
+function renderSurface(w,h){
+  const key=[S.modelId,S.emax,S.yaw.toFixed(4),S.pitch.toFixed(4),w,h].join("|");if(key===surfKey)return;surfKey=key;
+  const dpr=window.devicePixelRatio||1;surfCache.width=Math.round(w*dpr);surfCache.height=Math.round(h*dpr);
+  const c=surfCache.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);
+  const G=w<700?44:60,P=[],EV=[],NV=[],kz=0.8*PI/S.emax;
+  for(let j=0;j<=G;j++){P[j]=[];EV[j]=[];NV[j]=[];for(let i=0;i<=G;i++){const x=-PI+i*2*PI/G,y=-PI+j*2*PI/G,d=derivs(x,y),cap=d.e>=S.emax;
+    P[j][i]=proj(x,y,d.e);EV[j][i]=Math.min(d.e,S.emax);
+    const nx=cap?0:-d.gx*kz,ny=cap?0:-d.gy*kz,nn=Math.hypot(nx,ny,1);NV[j][i]=[nx/nn,ny/nn,1/nn];}}
+  S.verts={G,P};
+  const Lt=[-0.45,-0.5,0.74],q=[];
+  for(let j=0;j<G;j++)for(let i=0;i<G;i++){const a=P[j][i],b=P[j][i+1],cc=P[j+1][i+1],dd=P[j+1][i];
+    const e=(EV[j][i]+EV[j][i+1]+EV[j+1][i+1]+EV[j+1][i])/4,n=NV[j][i],l=Math.max(0,n[0]*Lt[0]+n[1]*Lt[1]+n[2]*Lt[2]);
+    const col=cmap(e/S.emax).map(v=>Math.round(Math.min(255,v*(0.35+0.75*l))));
+    q.push({z:(a[2]+b[2]+cc[2]+dd[2])/4,pts:[a,b,cc,dd],col:`rgb(${col})`});}
+  q.sort((u,v)=>v.z-u.z);c.lineWidth=0.6;
+  for(const f of q){c.beginPath();c.moveTo(f.pts[0][0],f.pts[0][1]);for(let k=1;k<4;k++)c.lineTo(f.pts[k][0],f.pts[k][1]);c.closePath();
+    c.fillStyle=f.col;c.strokeStyle=f.col;c.fill();c.stroke();}
+  // axis names along two edges of the landscape
+  c.font="600 14px 'IBM Plex Sans',sans-serif";c.textAlign="center";
+  const lab=(x,y,t)=>{const p=proj(x,y,0);c.lineWidth=4;c.strokeStyle=css("--sky2");c.fillStyle=css("--muted");c.strokeText(t,p[0],p[1]+22);c.fillText(t,p[0],p[1]+22);};
+  lab(0,-PI*1.08,S.names[0]+" →");lab(-PI*1.08,0,S.names[1]+" →");
+}
+function drawSurf(){
+  const{w,h}=stageGeom();if(w<50)return;
+  if(stageSize!==w+"x"+h){stageSize=w+"x"+h;fitCanvas(surf,w,h);surfKey="";}
+  setView(w,h);renderSurface(w,h);stageCompose();
+}
+function stageCompose(){
+  const w=surf.clientWidth,h=parseFloat(surf.style.height)||0;if(w<50||!h)return;
+  const dpr=window.devicePixelRatio||1,c=surf.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);
+  c.drawImage(surfCache,0,0,w,h);
+  const d=derivs(S.probe.x,S.probe.y),ev=eig(d.hxx,d.hxy,d.hyy),k=kind(ev.l1,ev.l2);
+  const col=k==="min"?css("--up"):k==="max"?css("--down"):css("--accent");
+  const n=10,R=0.45,Q=[];
+  for(let j=0;j<=n;j++){Q[j]=[];for(let i=0;i<=n;i++){const dx=-R+i*2*R/n,dy=-R+j*2*R/n,x=S.probe.x+dx,y=S.probe.y+dy;
+    const qv=d.e+d.gx*dx+d.gy*dy+0.5*(d.hxx*dx*dx+2*d.hxy*dx*dy+d.hyy*dy*dy);
+    Q[j][i]=(Math.abs(x)<=PI&&Math.abs(y)<=PI)?proj(x,y,qv):null;}}
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){const a=Q[j][i],b=Q[j][i+1],cc=Q[j+1][i+1],dd=Q[j+1][i];if(!a||!b||!cc||!dd)continue;
+    c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.lineTo(cc[0],cc[1]);c.lineTo(dd[0],dd[1]);c.closePath();
+    c.globalAlpha=0.5;c.fillStyle=col;c.fill();c.globalAlpha=0.9;c.strokeStyle="#FFFFFF";c.lineWidth=0.6;c.stroke();c.globalAlpha=1;}
+  const p=proj(S.probe.x,S.probe.y,d.e);
+  // floating molecule
+  const msz=Math.round(Math.min(h*0.44,w*(w<700?0.6:0.26)));let mx=p[0];
+  mx=Math.max(msz/2+6,Math.min(w-msz/2-6,mx));
+  // float clear of the landscape's skyline under the molecule
+  let top=p[1];if(S.verts)for(const row of S.verts.P)for(const v of row)if(Math.abs(v[0]-mx)<msz*0.35&&v[1]<top)top=v[1];
+  let my=Math.min(p[1]-h*0.22,top-msz*0.32);my=Math.max(msz/2+6,my);
+  if(w>=700){const card=document.querySelector(".stage-card").getBoundingClientRect(),st=surf.getBoundingClientRect();
+    const right=card.right-st.left+msz/2+12,bottom=card.bottom-st.top;if(my-msz/2<bottom&&mx<right)mx=Math.min(w-msz/2-6,right);
+    const zc=document.querySelector(".stage-zoom").getBoundingClientRect(),left=zc.left-st.left-msz/2-12,zb=zc.bottom-st.top;
+    if(my-msz/2<zb&&mx>left)mx=Math.max(right,left);}
+  S.molBox={x:mx-msz/2,y:my-msz/2,w:msz,h:msz};
+  if(V.X){
+    c.fillStyle="rgba(0,0,0,.22)";c.beginPath();c.ellipse(p[0],p[1],msz*0.2,msz*0.2*Math.max(0.2,Math.sin(S.pitch)),0,0,2*PI);c.fill();
+    c.save();c.setLineDash([3,5]);c.strokeStyle=css("--ink");c.globalAlpha=0.55;c.lineWidth=1.4;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(mx,my+msz*0.18);c.stroke();c.restore();
+    if(V.w!==msz){V.w=msz;V.h=msz;molRender();zoomRender();}
+    c.drawImage(molcv,mx-msz/2,my-msz/2,msz,msz);}
+  c.fillStyle="#0B1620";c.strokeStyle="#FFFFFF";c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],6,0,2*PI);c.fill();c.stroke();
+  c.fillStyle=css("--muted");c.font="12px 'IBM Plex Mono',monospace";c.textAlign="right";
+  c.fillText("ΔE / kJ mol⁻¹: 0 – "+S.emax.toFixed(0)+(S.emax>=ECAP?" (capped)":""),w-12,h-12);
+}
+
+// ---------- readout ----------
+function readout(){
+  const d=derivs(S.probe.x,S.probe.y),ev=eig(d.hxx,d.hxy,d.hyy),k=kind(ev.l1,ev.l2),f=v=>v.toFixed(1);
+  document.getElementById("hm").innerHTML=`<span>${f(d.hxx)}</span><span>${f(d.hxy)}</span><span>${f(d.hxy)}</span><span>${f(d.hyy)}</span>`;
+  const g=Math.hypot(d.gx,d.gy);
+  const nearMin=S.mol&&S.mol.minima.find(m=>Math.hypot(wrap(rad(m.x)-S.probe.x),wrap(rad(m.y)-S.probe.y))<0.02);
+  const nearSt=S.stat.find(p=>Math.hypot(wrap(p.x-S.probe.x),wrap(p.y-S.probe.y))<0.02);
+  const txt={min:"Bowl: curves up in every direction",max:"Dome: curves down in every direction",saddle:"Saddle: up along one eigenvector, down along the other"}[k];
+  const role=nearMin?` · at DFT minimum ${nearMin.label}`:nearSt?` · at ${{min:"surface minimum",saddle:"saddle",max:"maximum"}[nearSt.type]} ${nearSt.label}`:"";
+  const v=document.getElementById("verdict");v.textContent=txt+role;
+  document.getElementById("prov").innerHTML=provenance();v.className="verdict "+(k==="min"?"up":k==="max"?"down":"");
+  const cl=l=>l>0?"up":"down";
+  document.getElementById("stats").innerHTML=
+    `<span class="${cl(ev.l1)}">λ₁ = ${f(ev.l1)}</span><span class="${cl(ev.l2)}">λ₂ = ${f(ev.l2)}</span>`+
+    `<span>kJ mol⁻¹ rad⁻²</span><span>${S.names[0]} = ${fmt(deg(S.probe.x))}°</span><span>${S.names[1]} = ${fmt(deg(S.probe.y))}°</span>`+
+    `<span>ΔE = ${f(d.e)} kJ/mol</span><span>|∇E| = ${g.toFixed(2)}</span>`;
+}
+
+function provenance(){
+  if(!S.mol)return'<span class="prov-chip prov-int">your data</span>';
+  const onMin=S.mol.minima.find(m=>Math.hypot(wrap(rad(m.x)-S.probe.x),wrap(rad(m.y)-S.probe.y))<0.02);
+  if(onMin)return'<span class="prov-chip prov-full">full DFT</span>unconstrained optimisation + frequencies; ΔG in the minima table';
+  if(S.mol.achiral&&S.mol.minima.some(m=>Math.hypot(wrap(-rad(m.x)-S.probe.x),wrap(-rad(m.y)-S.probe.y))<0.02))
+    return'<span class="prov-chip prov-full">full DFT, mirror</span>mirror image of a fully optimised minimum (same G)';
+  const a=deg(S.probe.x),b=deg(S.probe.y),sp=S.mol.spacing,on=v=>Math.abs(v/sp-Math.round(v/sp))<0.02;
+  if(on(a)&&on(b)){const k=`${((Math.round(a/sp)*sp+180)%360+360)%360-180},${((Math.round(b/sp)*sp+180)%360+360)%360-180}`;
+    const sym=((GEOM[S.mol.key]||{}).sym||[]).includes(k);
+    return sym?'<span class="prov-chip prov-sym">by symmetry</span>energy of the mirror-image grid point (E only)'
+              :'<span class="prov-chip prov-e">computed, E only</span>constrained optimisation, SCF energy; no frequencies';}
+  return'<span class="prov-chip prov-int">interpolated</span>between grid points; energy and Hessian from the spline';
+}
+function draw(){drawMap();drawSurf();readout();molUpdate();}
+
+// ---------- molecule viewer ----------
+const GEOM=JSON.parse(document.getElementById("psych-geom").textContent);
+const molcv=document.createElement("canvas");
+const RAD={H:.31,C:.76,N:.71,O:.66,P:1.07,S:1.05};
+const V={w:300,h:300,hbCut:2.5,key:null,el:[],X:null,from:null,to:null,t0:0,bonds:[],R:6,yaw:0.6,pitch:-0.35,spin:false,anim:null,axes:[]};
+function elColor(e){return{C:css("--atomC"),H:css("--atomH"),N:"#3F6FD8",O:"#D6453D",P:"#E58A1F",S:"#D9B43A"}[e]||"#999999";}
+function molSet(key){
+  const g=GEOM[key];V.key=key;V.el=g.el;V.X=null;V.from=null;V.to=null;
+  const m0=g.minima[0],n0=m0.length/3;V.c0=[0,1,2].map(k=>{let s=0;for(let i=0;i<n0;i++)s+=m0[3*i+k];return s/n0;});
+  let R=0;for(const c of g.minima)for(let i=0;i<c.length;i+=3)R=Math.max(R,Math.hypot(c[i]-V.c0[0],c[i+1]-V.c0[1],c[i+2]-V.c0[2]));
+  V.R=R+0.3;
+  V.axes=[[g.dih[0][1],g.dih[0][2]],[g.dih[1][1],g.dih[1][2]]];
+  document.getElementById("ax1").textContent=S.names[0];document.getElementById("ax2").textContent=S.names[1];
+}
+function bondsOf(X){const b=[],n=V.el.length;for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+  const d=Math.hypot(X[3*i]-X[3*j],X[3*i+1]-X[3*j+1],X[3*i+2]-X[3*j+2]);
+  if(d<((RAD[V.el[i]]||.8)+(RAD[V.el[j]]||.8))*1.18)b.push([i,j]);}return b;}
+function molTarget(){
+  if(!S.mol||!GEOM[S.mol.key])return null;const g=GEOM[S.mol.key];
+  const i=S.mol.minima.findIndex(m=>Math.hypot(wrap(rad(m.x)-S.probe.x),wrap(rad(m.y)-S.probe.y))<0.02);
+  if(i>=0){const m=S.mol.minima[i];return{X:g.minima[i],cap:`[opt + freq] DFT minimum ${m.label} · ΔG ${m.dG.toFixed(2)} kJ/mol · ${m.pop<0.05?"<0.1":m.pop.toFixed(1)}% at 298 K`};}
+  const sp=S.mol.spacing,snap=v=>{let a=Math.round(deg(v)/sp)*sp;return((a+180)%360+360)%360-180;};
+  const a=snap(S.probe.x),b=snap(S.probe.y),c=g.cells[`${a},${b}`];
+  if(!c)return{X:null,cap:`${S.names[0]} = ${fmt(a,0)}°, ${S.names[1]} = ${fmt(b,0)}° · excluded grid point (steric clash)`};
+  const e=S.mol.grid.find(p=>p[0]===a&&p[1]===b);
+  const sym=(g.sym||[]).includes(`${a},${b}`);
+  const exact=Math.abs(deg(wrap(S.probe.x-rad(a))))<0.5&&Math.abs(deg(wrap(S.probe.y-rad(b))))<0.5;
+  return{X:c,cap:`[${sym?"mirror of a computed point":"constrained opt, E only"}] ${exact?"Grid point":"Nearest grid point"} ${S.names[0]} = ${fmt(a,0)}°, ${S.names[1]} = ${fmt(b,0)}° · ΔE ${e?e[2].toFixed(1):"?"} kJ/mol, other coordinates relaxed`};
+}
+function molUpdate(){
+  if(!S.mol){document.getElementById("molcap").textContent="Structures are shown for the built-in molecules only.";
+    V.key=null;V.X=null;document.getElementById("hbcap").textContent="";zoomRender();stageCompose();return;}
+  if(!GEOM[S.mol.key]){document.getElementById("molcap").textContent="No structures in this molecule file.";V.key=null;V.X=null;document.getElementById("hbcap").textContent="";zoomRender();stageCompose();return;}
+  if(V.key!==S.mol.key)molSet(S.mol.key);
+  const t=molTarget();document.getElementById("molcap").textContent=t?t.cap:"";
+  if(!t||!t.X||t.X===V.to)return;
+  V.from=V.X||t.X;V.to=t.X;V.bonds=bondsOf(t.X);V.t0=performance.now();
+  if(!V.anim)V.anim=requestAnimationFrame(molTick);
+}
+function molTick(now){
+  const T=reduce?1:220,u=Math.min(1,(now-V.t0)/T),s=u*u*(3-2*u);
+  V.X=V.from.map((v,i)=>v+(V.to[i]-v)*s);
+  if(V.spin)V.yaw+=0.006;
+  molDraw();
+  V.anim=(u<1||V.spin)?requestAnimationFrame(molTick):null;
+}
+const zoomcv=document.getElementById("zoom");
+function molDraw(){molRender();zoomRender();stageCompose();}
+function zoomRender(){const w=zoomcv.clientWidth;if(w<50)return;if(!V.X){fitCanvas(zoomcv,w,w).clearRect(0,0,w,w);return;}molRender(zoomcv,w,w,true);}
+function molRender(cv=molcv,w=V.w,h=V.h,big=false){
+  if(w<50||!V.X)return;const c=fitCanvas(cv,w,h);c.clearRect(0,0,w,h);
+  const cy=Math.cos(V.yaw),sy=Math.sin(V.yaw),cp=Math.cos(V.pitch),sp=Math.sin(V.pitch),sc=Math.min(w,h)*(big?0.62:0.5)/V.R;
+  const P=[];for(let i=0;i<V.el.length;i++){const x=V.X[3*i]-V.c0[0],y=V.X[3*i+1]-V.c0[1],z=V.X[3*i+2]-V.c0[2];
+    const x1=x*cy+z*sy,z1=-x*sy+z*cy,y2=y*cp-z1*sp,z2=y*sp+z1*cp;P.push([w/2+x1*sc,h/2-y2*sc,z2]);}
+  const axis=(i,j)=>V.axes.findIndex(a=>(a[0]===i&&a[1]===j)||(a[0]===j&&a[1]===i));
+  const items=[];
+  for(const[i,j]of V.bonds)items.push({z:(P[i][2]+P[j][2])/2-0.01,draw:()=>{const k=axis(i,j),mx=(P[i][0]+P[j][0])/2,my=(P[i][1]+P[j][1])/2;
+    c.lineCap="round";
+    if(k>=0){c.strokeStyle=css(k?"--chi2":"--chi1");c.lineWidth=Math.max(4,sc*0.2);c.beginPath();c.moveTo(P[i][0],P[i][1]);c.lineTo(P[j][0],P[j][1]);c.stroke();}
+    else{const hh=V.el[i]==="H"||V.el[j]==="H";c.lineWidth=Math.max(hh?1.5:2.2,sc*(hh?0.07:0.11));
+      c.strokeStyle=elColor(V.el[i]);c.beginPath();c.moveTo(P[i][0],P[i][1]);c.lineTo(mx,my);c.stroke();
+      c.strokeStyle=elColor(V.el[j]);c.beginPath();c.moveTo(mx,my);c.lineTo(P[j][0],P[j][1]);c.stroke();}}});
+  P.forEach((p,i)=>items.push({z:p[2],draw:()=>{const r=Math.max(V.el[i]==="H"?2.2:3.5,sc*(V.el[i]==="H"?0.16:0.27)),col=elColor(V.el[i]);
+    const g=c.createRadialGradient(p[0]-r*0.35,p[1]-r*0.35,r*0.15,p[0],p[1],r);g.addColorStop(0,"rgba(255,255,255,.85)");g.addColorStop(0.35,col);g.addColorStop(1,col);
+    c.fillStyle=g;c.strokeStyle="rgba(0,0,0,.35)";c.lineWidth=0.8;c.beginPath();c.arc(p[0],p[1],r,0,2*PI);c.fill();c.stroke();}}));
+  items.sort((a,b)=>a.z-b.z).forEach(it=>it.draw());
+  const hb=hbonds(V.X);
+  c.save();c.setLineDash([5,4]);c.lineWidth=2.2;c.strokeStyle=css("--hbond");c.fillStyle=css("--hbond");
+  c.font="600 12px 'IBM Plex Mono',monospace";c.textAlign="center";
+  for(const b of hb){const a=P[b.h],q=P[b.a];c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(q[0],q[1]);c.stroke();
+    const mx=(a[0]+q[0])/2,my=(a[1]+q[1])/2;c.setLineDash([]);c.lineWidth=3;c.strokeStyle=css("--panel");
+    c.strokeText(b.d.toFixed(2),mx,my-6);c.fillText(b.d.toFixed(2),mx,my-6);c.setLineDash([5,4]);c.lineWidth=2.2;c.strokeStyle=css("--hbond");}
+  c.restore();
+  if(big){c.font="600 13px 'IBM Plex Sans',sans-serif";c.textAlign="left";c.lineWidth=3;
+    V.axes.forEach((a,k)=>{const[i,j]=a,mx=(P[i][0]+P[j][0])/2,my=(P[i][1]+P[j][1])/2,off=k?14:-14;
+      c.strokeStyle=css("--panel");c.fillStyle=css(k?"--chi2":"--chi1");c.strokeText(S.names[k],mx+10,my+off);c.fillText(S.names[k],mx+10,my+off);});}
+  if(cv!==molcv)return;
+  const txt=hb.length?hb.map(b=>`${V.el[b.don]}–H···${V.el[b.a]} ${b.d.toFixed(2)} Å, ${b.ang.toFixed(0)}°`).join("   "):`No H-bonds with H···A ≤ ${V.hbCut.toFixed(2)} Å`;
+  const el=document.getElementById("hbcap");if(el.textContent!==txt)el.textContent=txt;
+}
+function hbonds(X){
+  // D–H···A with D, A in {N, O}; H covalently bound to D; A not bonded to D; acceptor N must have < 4 neighbours (no ammonium)
+  const n=V.el.length,dist=(i,j)=>Math.hypot(X[3*i]-X[3*j],X[3*i+1]-X[3*j+1],X[3*i+2]-X[3*j+2]);
+  const nb=Array.from({length:n},()=>[]);for(const[i,j]of V.bonds){nb[i].push(j);nb[j].push(i);}
+  const out=[];
+  for(let h=0;h<n;h++){if(V.el[h]!=="H"||nb[h].length!==1)continue;const don=nb[h][0];if(V.el[don]!=="N"&&V.el[don]!=="O")continue;
+    for(let a=0;a<n;a++){if(a===don||(V.el[a]!=="N"&&V.el[a]!=="O")||nb[don].includes(a))continue;
+      if(V.el[a]==="N"&&nb[a].length>=4)continue;
+      const d=dist(h,a);if(d>V.hbCut)continue;
+      const v1=[0,1,2].map(k=>X[3*don+k]-X[3*h+k]),v2=[0,1,2].map(k=>X[3*a+k]-X[3*h+k]);
+      const ang=Math.acos(Math.max(-1,Math.min(1,(v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2])/(Math.hypot(...v1)*Math.hypot(...v2)))))*180/PI;
+      if(ang>=110)out.push({h,a,don,d,ang});}}
+  return out;
+}
+document.getElementById("molspin").addEventListener("click",e=>{V.spin=!V.spin;e.target.textContent=V.spin?"Stop spin":"Spin molecule";
+  if(V.spin&&!V.anim&&V.X){V.from=V.to=V.X;V.t0=performance.now()-1000;V.anim=requestAnimationFrame(molTick);}});
+document.getElementById("hbcut").addEventListener("input",e=>{V.hbCut=+e.target.value;document.getElementById("hbval").textContent=V.hbCut.toFixed(2)+" Å";molDraw();});
+document.getElementById("molreset").addEventListener("click",()=>{V.yaw=0.6;V.pitch=-0.35;S.yaw=-0.75;S.pitch=0.45;drawSurf();molDraw();});
+
+// ---------- interaction ----------
+document.getElementById("tbody").addEventListener("click",e=>{const r=e.target.closest("tr");if(r){stopTour();moveTo(S.stat[+r.dataset.i]);}});
+document.getElementById("tbody").addEventListener("keydown",e=>{if(e.key!=="Enter")return;const r=e.target.closest("tr");if(r){stopTour();moveTo(S.stat[+r.dataset.i]);}});
+const minTo=r=>{const m=S.mol.minima[+r.dataset.i];stopTour();moveTo({x:rad(m.x),y:rad(m.y)});};
+document.getElementById("mins").addEventListener("click",e=>{const r=e.target.closest("tr");if(r)minTo(r);});
+document.getElementById("mins").addEventListener("keydown",e=>{if(e.key!=="Enter")return;const r=e.target.closest("tr");if(r)minTo(r);});
+let dragMap=false;
+function mapPick(ev){const g=mapGeom(),r=map.getBoundingClientRect(),mx=ev.clientX-r.left-M.l,my=ev.clientY-r.top-M.t;
+  const x=Math.max(-PI,Math.min(PI,mx/g.size*2*PI-PI)),y=Math.max(-PI,Math.min(PI,PI-my/g.size*2*PI));
+  const cands=[...S.stat.map(p=>({x:p.x,y:p.y})),...(S.mol?S.mol.minima.map(m=>({x:rad(m.x),y:rad(m.y)})):[])];
+  const snap=cands.find(p=>Math.hypot(wrap(p.x-x),wrap(p.y-y))*g.size/(2*PI)<9);
+  S.probe=snap?{x:wrap(snap.x),y:wrap(snap.y)}:{x,y};draw();}
+map.addEventListener("pointerdown",e=>{stopTour();dragMap=true;map.setPointerCapture(e.pointerId);mapPick(e);});
+map.addEventListener("pointermove",e=>{if(dragMap)mapPick(e);});
+map.addEventListener("pointerup",()=>dragMap=false);map.addEventListener("pointercancel",()=>dragMap=false);
+let rot=null;
+function stagePick(e){
+  // nearest projected landscape vertex to the pointer, preferring the front surface; snap to DFT minima
+  if(!S.verts)return;const r=surf.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,{G,P}=S.verts;
+  let best=null;
+  for(let j=0;j<=G;j++)for(let i=0;i<=G;i++){const v=P[j][i],d=Math.hypot(v[0]-px,v[1]-py);if(d>28)continue;
+    const score=d+v[2]*6;if(!best||score<best.score)best={score,i,j};}
+  if(!best)return;let x=wrap(-PI+best.i*2*PI/G),y=wrap(-PI+best.j*2*PI/G);
+  if(S.mol){for(const m of S.mol.minima){const pts=[[rad(m.x),rad(m.y)]];if(S.mol.achiral)pts.push([rad(-m.x),rad(-m.y)]);
+    for(const[a,b]of pts){const q=proj(a,b,E(a,b));if(Math.hypot(q[0]-px,q[1]-py)<14){x=wrap(a);y=wrap(b);}}}}
+  S.probe={x,y};draw();
+}
+let zrot=null;
+zoomcv.addEventListener("pointerdown",e=>{zrot={x:e.clientX,y:e.clientY};try{zoomcv.setPointerCapture(e.pointerId);}catch(_){}});
+zoomcv.addEventListener("pointermove",e=>{if(!zrot)return;V.yaw+=(e.clientX-zrot.x)*0.01;V.pitch=Math.max(-1.5,Math.min(1.5,V.pitch+(e.clientY-zrot.y)*0.01));zrot={x:e.clientX,y:e.clientY};molDraw();});
+zoomcv.addEventListener("pointerup",()=>zrot=null);zoomcv.addEventListener("pointercancel",()=>zrot=null);
+new ResizeObserver(()=>zoomRender()).observe(zoomcv);
+const inMol=e=>{const b=S.molBox,r=surf.getBoundingClientRect();if(!b||!V.X)return false;const x=e.clientX-r.left,y=e.clientY-r.top;
+  return x>b.x+b.w*0.15&&x<b.x+b.w*0.85&&y>b.y+b.h*0.15&&y<b.y+b.h*0.85;};
+surf.addEventListener("pointerdown",e=>{stopTour();try{surf.setPointerCapture(e.pointerId);}catch(_){}
+  rot={x:e.clientX,y:e.clientY,what:inMol(e)?"mol":(S.dragMode==="rotate"||e.shiftKey?"view":"probe")};if(rot.what==="probe")stagePick(e);});
+surf.addEventListener("pointermove",e=>{if(!rot)return;const dx=e.clientX-rot.x,dy=e.clientY-rot.y;rot.x=e.clientX;rot.y=e.clientY;
+  if(rot.what==="mol"){V.yaw+=dx*0.01;V.pitch=Math.max(-1.5,Math.min(1.5,V.pitch+dy*0.01));molDraw();}
+  else if(rot.what==="view"){S.yaw+=dx*0.01;S.pitch=Math.max(0.15,Math.min(0.95,S.pitch-dy*0.008));drawSurf();}
+  else stagePick(e);});
+surf.addEventListener("pointerup",()=>rot=null);surf.addEventListener("pointercancel",()=>rot=null);
+const setDrag=m=>{S.dragMode=m;document.getElementById("dragprobe").setAttribute("aria-pressed",m==="probe");
+  document.getElementById("dragrot").setAttribute("aria-pressed",m==="rotate");stage.classList.toggle("rotating",m==="rotate");};
+document.getElementById("dragprobe").addEventListener("click",()=>setDrag("probe"));
+document.getElementById("dragrot").addEventListener("click",()=>setDrag("rotate"));
+let anim=null;
+function moveTo(p,done){
+  if(anim)cancelAnimationFrame(anim);
+  const x0=S.probe.x,y0=S.probe.y,dx=wrap(p.x-x0),dy=wrap(p.y-y0),T=reduce?1:1000,t0=performance.now();
+  const step=t=>{const u=Math.min(1,(t-t0)/T),s=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+    S.probe={x:wrap(x0+dx*s),y:wrap(y0+dy*s)};if(u>=1)S.probe={x:wrap(p.x),y:wrap(p.y)};draw();
+    if(u<1)anim=requestAnimationFrame(step);else{anim=null;done&&done();}};
+  anim=requestAnimationFrame(step);
+}
+let tourTimer=null;
+function stopTour(){S.touring=false;clearTimeout(tourTimer);if(anim){cancelAnimationFrame(anim);anim=null;}document.getElementById("tour").textContent="Tour stationary points";}
+document.getElementById("tour").addEventListener("click",()=>{
+  if(S.touring){stopTour();return;}
+  const stops=[...(S.mol?S.mol.minima.map(m=>({x:rad(m.x),y:rad(m.y)})):[]),...S.stat.filter(p=>p.type==="saddle")];
+  if(!stops.length)return;S.touring=true;document.getElementById("tour").textContent="Stop tour";
+  let i=0;const next=()=>{if(!S.touring)return;moveTo(stops[i%stops.length],()=>{i++;tourTimer=setTimeout(next,900);});};next();
+});
+let spinRaf=null;
+document.getElementById("spin").addEventListener("click",e=>{
+  S.spin=!S.spin;e.target.textContent=S.spin?"Stop spin":"Spin landscape";
+  if(S.spin){let last=performance.now();const f=t=>{if(!S.spin)return;S.yaw+=(t-last)*0.0004;last=t;drawSurf();spinRaf=requestAnimationFrame(f);};spinRaf=requestAnimationFrame(f);}
+  else cancelAnimationFrame(spinRaf);
+});
+
+// ---------- user data ----------
+const status=document.getElementById("status");
+document.getElementById("file").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{document.getElementById("csv").value=r.result;};r.readAsText(f);});
+document.getElementById("fit").addEventListener("click",()=>{
+  stopTour();
+  const k=parseFloat(document.getElementById("unit").value),raw=[];
+  for(const line of document.getElementById("csv").value.split(/\r?\n/)){
+    const nums=line.trim().split(/[\s,;]+/).map(Number);if(nums.length<3||nums.slice(0,3).some(v=>!isFinite(v)))continue;raw.push([nums[0],nums[1],nums[2]*k]);}
+  if(raw.length<12){status.textContent="Need at least 12 rows of τ1, τ2, energy. Found "+raw.length+".";return;}
+  const e0=Math.min(...raw.map(p=>p[2]));raw.forEach(p=>p[2]-=e0);
+  const g=gridModel(raw);let msg;
+  if(g){S.model=g.fn;S.holes=g.holes;S.loc=g.loc;S.gridH=g.h;msg=`Interpolated a complete ${raw.length}-point grid with a periodic spline (exact at every point).`;}
+  else{const r=fourierModel(raw.map(p=>({x:wrap(rad(p[0])),y:wrap(rad(p[1])),e:p[2]})));S.model=r.fn;S.holes=[];S.loc=null;
+    msg=`Not a regular grid, so fitted a Fourier series to order ${r.Mx} (${r.P} terms). RMS residual ${r.rms.toFixed(2)} kJ/mol.`+(r.rms>1.5?" That is high: check the grid is complete and the unit is right.":"");}
+  S.mol=null;S.shift=0;S.modelId="user"+Date.now();document.getElementById("stagetitle").textContent="Your data";S.names=[document.getElementById("n1").value||"τ1",document.getElementById("n2").value||"τ2"];
+  S.stat=findStationary();const mins=S.stat.filter(p=>p.type==="min");if(mins.length){S.shift=Math.min(...mins.map(p=>p.e));S.stat=findStationary();}
+  buildField();setNames();buildMins();buildBarriers();buildTable();
+  document.querySelectorAll("#mols button").forEach(b=>b.setAttribute("aria-pressed","false"));
+  document.getElementById("maptitle").textContent="Energy map · your data";
+  const c1=S.stat.find(p=>p.type==="min");S.probe=c1?{x:c1.x,y:c1.y}:{x:0,y:0};
+  status.textContent=msg;draw();
+});
+
+new ResizeObserver(()=>drawMap()).observe(map);
+new ResizeObserver(()=>drawSurf()).observe(surf);
+addEventListener("resize",()=>drawSurf());
+document.getElementById("showgrid").addEventListener("change",()=>drawMap());
+const rerender=()=>{if(S.model)draw();};
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",rerender);
+new MutationObserver(rerender).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+const start=(location.hash||"").slice(1);
+// ---------- user molecule files ----------
+function addMolecule(obj){
+  const m=obj&&(obj.molecule||obj),geo=obj&&obj.geometry;
+  const bad=t=>{throw new Error(t);};
+  if(!m||typeof m!=="object")bad("The file has no molecule object.");
+  if(!Array.isArray(m.grid)||m.grid.length<12)bad("grid must be a list of at least 12 [τ1, τ2, energy] rows.");
+  if(m.grid.some(r=>!Array.isArray(r)||r.length<3||r.slice(0,3).some(v=>typeof v!=="number"||!isFinite(v))))bad("Every grid row must be three numbers: τ1 (°), τ2 (°), energy (kJ/mol).");
+  const name=String(m.name||"My molecule").slice(0,40);
+  let key=String(m.key||name).replace(/[^A-Za-z0-9_-]/g,"").slice(0,32)||"mol";
+  while(DATA.some(d=>d.key===key))key+="_2";
+  const e0=Math.min(...m.grid.map(r=>r[2]));
+  const mol={key,name,sub:String(m.sub||"Your data").slice(0,60),names:Array.isArray(m.names)&&m.names.length===2?m.names.map(String):["τ1","τ2"],
+    spacing:Number(m.spacing)||Math.abs(m.grid[1][1]-m.grid[0][1])||30,achiral:!!m.achiral,
+    grid:m.grid.map(r=>[r[0],r[1],r[2]-e0]),
+    minima:Array.isArray(m.minima)?m.minima.filter(x=>x&&isFinite(x.x)&&isFinite(x.y)).map(x=>({x:+x.x,y:+x.y,dG:+x.dG||0,pop:+x.pop||0,label:String(x.label||"min").slice(0,20),...(isFinite(x.rotor)?{rotor:+x.rotor}:{})})):[],
+    barriers:Array.isArray(m.barriers)?m.barriers.filter(b=>b&&isFinite(b.grid)).map(b=>({dih:String(b.dih||"").slice(0,12),grid:+b.grid,scan:isFinite(b.scan)?+b.scan:+b.grid})):[]};
+  if(!gridModel(mol.grid))bad("grid is not a complete regular grid. Use the scan loader above for irregular data.");
+  if(geo){
+    if(!Array.isArray(geo.el)||!geo.cells||typeof geo.cells!=="object"||!Array.isArray(geo.dih)||geo.dih.length!==2)bad("geometry needs el, dih (two atom-index quadruples) and cells.");
+    const n=geo.el.length*3;
+    if(!Array.isArray(geo.minima)||geo.minima.length!==mol.minima.length||geo.minima.some(c=>!Array.isArray(c)||c.length!==n))bad("geometry.minima needs one coordinate list per minimum, each with 3 × atoms numbers.");
+    GEOM[key]={el:geo.el.map(String),dih:geo.dih,cells:geo.cells,sym:Array.isArray(geo.sym)?geo.sym:[],minima:geo.minima};
+  }
+  DATA.push(mol);
+  nav.insertAdjacentHTML("beforeend",`<button type="button" data-key="${key}" aria-pressed="false"><span class="n"></span><span class="s"></span></button>`);
+  const b=nav.lastElementChild;b.querySelector(".n").textContent=mol.name;b.querySelector(".s").textContent=mol.sub;
+  return key;
+}
+document.getElementById("molfile").addEventListener("change",e=>{
+  const f=e.target.files[0],out=document.getElementById("molstatus");if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const key=addMolecule(JSON.parse(r.result));loadMolecule(key);out.textContent="Loaded "+f.name+". It stays in this tab only.";}
+    catch(err){out.textContent="Couldn't load that file: "+(err instanceof SyntaxError?"it isn't valid JSON.":err.message);}};
+  r.readAsText(f);e.target.value="";
+});
+loadMolecule(DATA.some(d=>d.key===start)?start:DATA[0].key);
+})();
+</script>

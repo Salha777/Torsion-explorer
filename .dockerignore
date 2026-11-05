@@ -1,0 +1,6 @@
+.git
+.github
+site
+provenance
+*.md
+__pycache__

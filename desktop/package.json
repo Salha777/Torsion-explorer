@@ -1,0 +1,41 @@
+{
+  "name": "torsion-explorer",
+  "productName": "Torsion Explorer",
+  "version": "1.0.0",
+  "description": "Interactive relaxed DFT torsion surfaces with a Hessian readout",
+  "author": "Mohammed Salha",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "copy-site": "node -e \"require('fs').mkdirSync('app',{recursive:true});require('fs').copyFileSync('../site/index.html','app/index.html')\"",
+    "start": "npm run copy-site && electron .",
+    "selftest": "npm run copy-site && node -e \"process.env.PTE_SELFTEST='1';require('child_process').spawnSync(require('electron'),['.'],{stdio:'inherit',env:process.env})\"",
+    "dist": "npm run copy-site && electron-builder --win portable"
+  },
+  "build": {
+    "appId": "io.github.salha777.torsionexplorer",
+    "productName": "Torsion Explorer",
+    "files": [
+      "main.js",
+      "app/**"
+    ],
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "TorsionExplorer-${version}-portable.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "32.3.3",
+    "electron-builder": "25.1.8"
+  },
+  "allowScripts": {
+    "electron@32.3.3": true
+  }
+}

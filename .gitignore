@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+# raw calculation outputs never belong here (keep them out of this repo)
+*.log
+*.chk
+*.fchk
+*.wfn
+
+# desktop build outputs
+desktop/node_modules/
+desktop/dist/
+desktop/app/

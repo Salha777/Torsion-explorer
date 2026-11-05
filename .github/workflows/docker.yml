@@ -1,0 +1,25 @@
+name: docker-build
+
+# Builds the image and checks the container serves the page. Nothing is pushed to a registry.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t torsion-explorer:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name app -p 8080:80 torsion-explorer:ci
+          for i in $(seq 1 20); do curl -fsS http://localhost:8080/ -o page.html && break; sleep 1; done
+          grep -q "Torsion Explorer" page.html
+          grep -q 'id="psych-geom"' page.html
+          echo "served $(wc -c < page.html) bytes"
+          docker rm -f app
