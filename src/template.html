@@ -579,8 +579,9 @@ const V={w:300,h:300,hbCut:2.5,key:null,el:[],X:null,from:null,to:null,t0:0,bond
 function elColor(e){return{C:css("--atomC"),H:css("--atomH"),N:"#3F6FD8",O:"#D6453D",P:"#E58A1F",S:"#D9B43A"}[e]||"#999999";}
 function molSet(key){
   const g=GEOM[key];V.key=key;V.el=g.el;V.X=null;V.from=null;V.to=null;
-  const m0=g.minima[0],n0=m0.length/3;V.c0=[0,1,2].map(k=>{let s=0;for(let i=0;i<n0;i++)s+=m0[3*i+k];return s/n0;});
-  let R=0;for(const c of g.minima)for(let i=0;i<c.length;i+=3)R=Math.max(R,Math.hypot(c[i]-V.c0[0],c[i+1]-V.c0[1],c[i+2]-V.c0[2]));
+  const sample=g.minima.length?g.minima:Object.values(g.cells).filter((_,i)=>i%7===0);
+  const m0=sample[0],n0=m0.length/3;V.c0=[0,1,2].map(k=>{let s=0;for(let i=0;i<n0;i++)s+=m0[3*i+k];return s/n0;});
+  let R=0;for(const c of sample)for(let i=0;i<c.length;i+=3)R=Math.max(R,Math.hypot(c[i]-V.c0[0],c[i+1]-V.c0[1],c[i+2]-V.c0[2]));
   V.R=R+0.3;
   V.axes=[[g.dih[0][1],g.dih[0][2]],[g.dih[1][1],g.dih[1][2]]];
   document.getElementById("ax1").textContent=S.names[0];document.getElementById("ax2").textContent=S.names[1];
